@@ -10,54 +10,72 @@ layout (location=4) uniform sampler2D tex;
 #define MAT_KEY_WHITE 1
 #define MAT_BLACK_NOISE 2
 #define MAT_BLACK_NOISE_LOGO 3
-#define MAT_BLACK_SHINY 4
+#define MAT_GROUND 4
+#define MAT_SCREEN_OUTER 5
+#define MAT_WALL 6
 int i;
 vec3 gHitPosition = vec3(0);
 
 float rand(vec2 p){return fract(sin(dot(p.xy,vec2(12.9898,78.233)))*43758.5453);}
 mat2 rot2(float a){float s=sin(a),c=cos(a);return mat2(c,s,-s,c);}
 
+// better box that works for subtraction //noexport
+// https://iquilezles.org/articles/distfunctions/
+float box(vec3 p, vec3 b)
+{
+	vec3 q = abs(p) - b;
+	return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
+}
+
 vec2 m(vec2 b, vec2 a){return a.x<b.x?a:b;}
+
+vec2 wall(vec3 p)
+{
+	p.y -= 50.;
+	return vec2(max(max(dot(p,vec3(0.,-1.,0.)), -box(p,vec3(60.,10.,68.))),
+		-box(p,vec3(50.,30.,58.))
+	), MAT_WALL);
+}
+
+vec2 screen(vec3 p)
+{
+	p.y -= 100.;
+	float x = mod(p.x, 5.) - 2.5;
+	return vec2(min(
+		dot(p,vec3(0.,-1.,0.)), // wall
+		length(max(abs(vec2(x, p.y)) - 1., 0.)) // bars
+	), MAT_WALL);
+}
 
 vec2 map(vec3 p)
 {
 	float ground = dot(p,vec3(0.,0.,-1.));
-	//p.y += 10.;
-	vec2 r = vec2(9e9, MAT_BLACK_SHINY);
 	p.z += 2.;
-	vec3 f = p; // p but rotated for the pressed keys
-	f.y -= 5.;
-	f.yz *= rot2(.07);
-	f.y += 5.;
-	f.z -= .8;
-	vec3 o = vec3(2.3,0.,0.);
-	float w = 9e9;
 
-	float b = 9e9;
-	// q = position adjusted for black keys //noexport
-	vec3 q = p + vec3(0.,2.8,1.4);
-
-	r = m(r, vec2(length(max(abs(p.yz-vec2(8.1,2.4)) - vec2(.4,2.), 0.)) - .1, MAT_BLACK_NOISE));
-	if (ground < r.x) return vec2(ground, MAT_BLACK_SHINY);
+	vec2 r = vec2(9e9, MAT_GROUND);
+	r = m(r, vec2(length(max(abs(p.xyz-vec3(8.,0.,0.)) - vec3(.4,2.,1.), 0.)), MAT_SCREEN_OUTER));
+	r = m(r, vec2(length(max(abs(p.yz-vec2(8.1,2.4)) - vec2(.4,2.), 0.)), MAT_BLACK_NOISE));
+	r = m(r, wall(p));
+	if (ground < r.x) return vec2(ground, MAT_GROUND);
 	return r;
 }
 
 vec3 norm(vec3 p, float dist_to_p)
 {
-	vec2 e=vec2(.0035,-.0035);
+	vec2 e=vec2(1.,-1.)*.0035;
 	return normalize(e.xyy*map(p+e.xyy).x+e.yyx*map(p+e.yyx).x+e.yxy*map(p+e.yxy).x+e.xxx*map(p+e.xxx).x);
 }
 
-// x=hit y=dist_to_p z=dist_to_ro w=material(if hit)
-vec4 march(vec3 ro, vec3 rd, int maxSteps)
+// x=hit(flopineShade) y=dist_to_p z=dist_to_ro w=material(if hit)
+vec4 march(vec3 ro, vec3 rd)
 {
 	vec4 r = vec4(0);
-	for (i = 0; i < maxSteps && r.z < 350.; i++){
+	for (i = 0; i < 200 && r.z < 350.; i++){
 		gHitPosition = ro + rd * r.z;
 		vec2 m = map(gHitPosition);
 		float dist = m.x;
 		if (dist < .0001) {
-			r.x = float(i)/float(maxSteps);
+			r.x = float(i)/float(200); // TODO: this can just be 1. if not using flopine shade
 			r.y = dist;
 			r.w = m.y;
 			break;
@@ -68,11 +86,11 @@ vec4 march(vec3 ro, vec3 rd, int maxSteps)
 }
 
 // sourced from https://www.shadertoy.com/view/lsKcDD
-float calcAO(vec3 pos, vec3 nor )
+float calcAO(vec3 pos, vec3 nor)
 {
-	float occ = 0.0;
-	float sca = 1.0;
-	for( int i=0; i<5; i++ ) {
+	float occ = 0.;
+	float sca = 1.;
+	for(int i=0; i<5; i++) {
 		float h = 0.001 + 0.15*float(i)/4.0;
 		float d = map( pos + h*nor ).x;
 		occ += (h-d)*sca;
@@ -86,14 +104,14 @@ float softshadow(vec3 ro, vec3 rd)
 {
 	float res = 1.0;
 	float ph = 9e9;
-	for(float dist = 0.01; dist < 40.; ) {
+	for(float dist = .01; dist < 40.; ) {
 		float h = map(ro + rd*dist).x;
-		if (h<0.001) {
-			return 0.0;
+		if (h<.001) {
+			return 0.;
 		}
-		float y = h*h/(2.0*ph);
+		float y = h*h/(2.*ph);
 		float d = sqrt(h*h-y*y);
-		res = min(res, 6.*d/max(0.0,dist-y)); // increase this number for more feather shadows
+		res = min(res, 128.*d/max(0.,dist-y)); // lower this number for more feather shadows
 		ph = h;
 		dist += h;
 	}
@@ -103,19 +121,38 @@ float softshadow(vec3 ro, vec3 rd)
 // w component is amount of reflection mix //noexport
 vec4 getmat(vec4 r)
 {
+	vec3 p = gHitPosition.xyz;
 	switch (int(r.w)) {
 	case MAT_KEY_BLACK: return vec4(.007,.007,.007,.4);
 	case MAT_KEY_WHITE: return vec4(vec3(218.,216.,227.)/255., .6);
 	case MAT_BLACK_NOISE:
 	case MAT_BLACK_NOISE_LOGO: return vec4(vec3(.05+.05*rand(mod(vec2(r.z,r.y),10))), 0.);
-	case MAT_BLACK_SHINY: return vec4(.53,.23,.09, 0.);
-	//case MAT_BLACK_SHINY: return vec4(0.);
+	case MAT_GROUND:
+		if (p.y>50.)
+			return vec4(.01);
+		return vec4(.53,.23,.09, 0.);
+	case MAT_SCREEN_OUTER: return vec4(vec3(.1),.0);
+	//case MAT_WALL: return vec4(222.,188.,153.,.0)/255.;
+	case MAT_WALL:
+		if (p.y>70.) {
+			if (abs(p.x)<35. && abs(p.z+32.)<20.) {
+				return vec4(vec3(.5),0.);
+			}
+			return vec4(vec3(.02),0.);
+		}
+		//if (p.z<-60. && mod(p.x+.5,10.)<1.)
+			//return vec4(146.,100.,64.,.0)/255.;
+		if (mod(p.z,10.)>1.)
+			return vec4(233.,203.,169.,.0)/255.;
+		return vec4(224.,154.,69.,0.)/255.;
 	}
 	return vec4(0., 1., 0., 3.);
 }
 
 vec3 colorHit(vec4 result, vec3 rd, vec3 normal, vec3 mat)
 {
+	//return mat;
+	//return 1.-vec3(result.x);
 	if (result.w == MAT_BLACK_NOISE_LOGO) {
 		vec2 mb = gHitPosition.xy;
 		// x-4 is mid, height is 4 so x is -8 to 0
@@ -148,24 +185,25 @@ vec3 colorHit(vec4 result, vec3 rd, vec3 normal, vec3 mat)
 
 	// https://www.shadertoy.com/view/lsKcDD
 	// key light
-	vec3 lig = normalize(vec3(-.2, -0.1, -0.6));
+	vec3 lig = normalize(vec3(-.2,-.6,-.15));
 	vec3 hal = normalize(lig-rd);
-	float dif = clamp(dot(normal, lig), .0, 1.) * softshadow(gHitPosition, lig);
+	float dif = clamp(dot(normal, lig), .0, 1.) * clamp(softshadow(gHitPosition, lig),.5,1.);
 
 	float spe = pow(clamp(dot(normal, hal), .0, 1. ),16.0)* dif *
 	(0.04 + 0.96*pow(clamp(1.0+dot(hal,rd),.0,1.), 5.0));
 
-	vec3 col = mat * 3.*dif;
-	col += 12.0*spe*vec3(1.0,0.7,0.5);
+	vec3 col = mat * 1.*dif;
+	// TODO: maybe no spe
+	//col += 12.0*spe*vec3(1.0,0.7,0.5);
 
 	// ambient light
-	// TODO: enable this maybe
-	//float occ = calcAO(gHitPosition, normal);
-	//float amb = clamp(0.5+0.5*normal.y, 0., 1.);
-	//col += mat*amb*occ*vec3(.1);
+	float occ = calcAO(gHitPosition, normal);
+	float amb = clamp(0.5+0.5*normal.y, 0., 1.);
+	col += mat*amb*occ*vec3(.1);
 
 	// fog
 	float t = result.z;
+	//col *= exp(-0.00007*t*t);
 	//col *= exp(-0.000007*t*t*t);
 	//col *= exp(-0.00007*t);
         //col *= exp(-0.0005*t*t*t);
@@ -225,7 +263,7 @@ void main()
 #endif //noexport
 			vec3 rd = rdbase*normalize(vec3(uv,1)), col = vec3(0.);
 
-			vec4 result = march(ro, rd, 200);
+			vec4 result = march(ro, rd);
 
 			if (result.x > 0.) { // hit
 				vec3 normal = norm(gHitPosition, result.y);
@@ -235,7 +273,7 @@ void main()
 					vec3 gg = gHitPosition;
 					rd = reflect(rd, normal);
 					gHitPosition += .001 * rd;
-					vec4 nr = march(gHitPosition, rd, 200);
+					vec4 nr = march(gHitPosition, rd);
 					if (result.x > 0.) {
 						vec3 nn = norm(gHitPosition, result.y);
 						vec3 m = getmat(nr).xyz;
