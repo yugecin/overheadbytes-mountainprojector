@@ -13,6 +13,9 @@ layout (location=4) uniform sampler2D tex;
 #define MAT_GROUND 4
 #define MAT_SCREEN_OUTER 5
 #define MAT_WALL 6
+#define MAT_PODIUM 7
+#define MAT_OHP 8
+#define MAT_OHP_LITE 9
 int i;
 vec3 gHitPosition = vec3(0);
 
@@ -47,17 +50,52 @@ vec2 screen(vec3 p)
 	), MAT_WALL);
 }
 
+// TODO: keep or not?
+vec2 stage(vec3 p)
+{
+	p.y -= 68.;
+	p.z += 1.;
+	vec2 r = vec2(9e9, MAT_GROUND);
+#define st r=m(r,vec2(length(max(abs(p) - vec3(8.,4.9,.15), 0.)), MAT_PODIUM))
+	st;
+	p.y += 10.;
+	st;
+	return r;
+}
+
+vec2 ohp(vec3 p)
+{
+	p.z += 5.;
+	vec2 r = vec2(length(max(abs(p)-vec3(3.,3.,2.),0.))-.05, MAT_OHP);
+	vec3 q=p;q.z-=.14;
+	r=m(r,vec2(length(max(abs(q)-vec3(2.2),0.)),MAT_OHP_LITE));
+	q=p+vec3(-3.25,2.,3.);
+	r=m(r,vec2(length(max(abs(q)-vec3(.2,.2,4.),0.)), MAT_OHP)); // vertical beam thing
+	r=m(r,vec2(length(max(abs(q+vec3(.1,-.4,2.5))-vec3(.5,.8,.5),0.)), MAT_OHP)); // handle thing
+	q+=vec3(1.4,-.8,3.1);
+	q.zx *= rot2(1.);
+	q.zy *= rot2(-.3);
+	r=m(r,vec2(length(max(abs(q)-vec3(.2,.2,1.7),0.)), MAT_OHP)); // connect thing
+	p.z += 7;
+	r=m(r,vec2(max(
+		length(max(abs(p)-vec3(.7,1.,.3),0.)), // lens
+		dot(p,normalize(vec3(0.,1.,-2.))) // with slanted cutoff
+	), MAT_OHP));
+	p.z+=.7;
+	p.yz*=rot2(-.8);
+	r=m(r,vec2(length(max(abs(p)-vec3(.6,.8,.07),0.)), MAT_OHP));
+	return r;
+}
+
 vec2 map(vec3 p)
 {
-	float ground = dot(p,vec3(0.,0.,-1.));
 	p.z += 2.;
 
 	vec2 r = vec2(9e9, MAT_GROUND);
-	r = m(r, vec2(length(max(abs(p.xyz-vec3(8.,0.,0.)) - vec3(.4,2.,1.), 0.)), MAT_SCREEN_OUTER));
-	r = m(r, vec2(length(max(abs(p.yz-vec2(8.1,2.4)) - vec2(.4,2.), 0.)), MAT_BLACK_NOISE));
 	r = m(r, wall(p));
-	if (ground < r.x) return vec2(ground, MAT_GROUND);
-	return r;
+	//r = m(r, stage(p));
+	r = m(r, ohp(p));
+	return m(r, vec2(dot(p,vec3(0.,0.,-1.)), MAT_GROUND));
 }
 
 vec3 norm(vec3 p, float dist_to_p)
@@ -130,7 +168,7 @@ vec4 getmat(vec4 r)
 	case MAT_GROUND:
 		if (p.y>50.)
 			return vec4(.01);
-		return vec4(.53,.23,.09, 0.);
+		return vec4(.53,.23,.09,.4);
 	case MAT_SCREEN_OUTER: return vec4(vec3(.1),.0);
 	//case MAT_WALL: return vec4(222.,188.,153.,.0)/255.;
 	case MAT_WALL:
@@ -145,47 +183,68 @@ vec4 getmat(vec4 r)
 		if (mod(p.z,10.)>1.)
 			return vec4(233.,203.,169.,.0)/255.;
 		return vec4(224.,154.,69.,0.)/255.;
+	case MAT_PODIUM:
+		return vec4(1.,.07,.07,.0);
+	case MAT_OHP:
+		//return vec4(255.,220.,175.,0.)/255.;
+		return vec4(.2,.2,.2,.0);
+	case MAT_OHP_LITE:
+		return vec4(vec3(1.),.0);
 	}
 	return vec4(0., 1., 0., 3.);
+}
+
+float mb(vec2 mb)
+{
+    if (mb.x<0.||mb.y<0.||mb.x>1.||mb.y>1.)return 0.;
+    //float a=.2,b=.8;
+    float a=mod(mb.x,.04)<.02?0.:1.,b=1.;
+    if (mod(mb.y,.04)<.02)a=1.-a;
+    if (mb.x > .5) {
+        b=a,a=1.;
+    }
+    mb.x = abs(mb.x-.5)*2.;
+    if (mb.y > .33) {
+        float y = (mb.y-.33)/.66;
+        if (mb.x < .715) {
+            float x = mb.x/.715;
+            if (x > .5 && (x-.5)*2. > 1.-y) {
+                return b;
+            } else if (x > 1.-y) {
+                return a;
+            }
+        } else if ((mb.x-.715)/.285<y) {
+            return b;
+        }
+    }
+    if (mb.x < mb.y) {
+        return b;
+    }
+    return 0.;
 }
 
 vec3 colorHit(vec4 result, vec3 rd, vec3 normal, vec3 mat)
 {
 	//return mat;
 	//return 1.-vec3(result.x);
-	if (result.w == MAT_BLACK_NOISE_LOGO) {
-		vec2 mb = gHitPosition.xy;
-		// x-4 is mid, height is 4 so x is -8 to 0
-		if (mb.x > -8. && mb.x < 0. && mb.y < -18.7 && mb.y > -22.7) {
-			mb -= vec2(-8., -22.7);
-			mb /= vec2(8., 4.);
-			float a = .2, b = .8;
-			if (mb.x > .5) {
-				b = .2;a = .8;
-			}
-			mb.x = abs(mb.x-.5)*2.;
-			if (mb.y > .33) {
-				float y = (mb.y-.33)/.66;
-				if (mb.x < .715) {
-					float x = mb.x/.715;
-					if (x > .5 && (x-.5)*2. > 1.-y) {
-						return vec3(1.)*b;
-					} else if (x > 1.-y) {
-						return vec3(1.)*a;
-					}
-				} else if ((mb.x-.715)/.285<y) {
-					return vec3(1.)*b;
-				}
-			}
-			if (mb.x < mb.y) {
-				return vec3(1.)*b;
-			}
+	if (result.w == MAT_OHP_LITE) {
+		// it's 4x4
+		vec3 lit=.8*vec3(250.,255.,211.)/255.;
+		vec2 h=gHitPosition.xy;
+		h.y+=.8;
+		if (abs(h.x)<2.&&abs(h.y)<1.) {
+			lit*=clamp(mb((h+vec2(1.8,.8))/vec2(3.6,1.6)),.02,1.);
 		}
+		return lit;
 	}
 
 	// https://www.shadertoy.com/view/lsKcDD
 	// key light
 	vec3 lig = normalize(vec3(-.2,-.6,-.15));
+
+	// TODO HERE
+	//return mat * 2. * clamp(dot(normal, lig), .0, 1.);
+
 	vec3 hal = normalize(lig-rd);
 	float dif = clamp(dot(normal, lig), .0, 1.) * clamp(softshadow(gHitPosition, lig),.5,1.);
 
@@ -199,7 +258,7 @@ vec3 colorHit(vec4 result, vec3 rd, vec3 normal, vec3 mat)
 	// ambient light
 	float occ = calcAO(gHitPosition, normal);
 	float amb = clamp(0.5+0.5*normal.y, 0., 1.);
-	col += mat*amb*occ*vec3(.1);
+	col += mat*amb*occ*vec3(.12);
 
 	// fog
 	float t = result.z;
