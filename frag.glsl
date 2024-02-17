@@ -30,6 +30,13 @@ float box(vec3 p, vec3 b)
 	return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
 }
 
+float ellipsoid(vec3 p, vec3 r)
+{
+  float k0 = length(p/r);
+  float k1 = length(p/(r*r));
+  return k0*(k0-1.0)/k1;
+}
+
 vec2 m(vec2 b, vec2 a){return a.x<b.x?a:b;}
 
 vec2 wall(vec3 p)
@@ -40,6 +47,7 @@ vec2 wall(vec3 p)
 	), MAT_WALL);
 }
 
+// TODO: unused
 vec2 screen(vec3 p)
 {
 	p.y -= 100.;
@@ -76,15 +84,26 @@ vec2 ohp(vec3 p)
 	q.zx *= rot2(1.);
 	q.zy *= rot2(-.3);
 	r=m(r,vec2(length(max(abs(q)-vec3(.2,.2,1.7),0.)), MAT_OHP)); // connect thing
-	p.z += 7;
+	p.z += 7.;
 	r=m(r,vec2(max(
 		length(max(abs(p)-vec3(.7,1.,.3),0.)), // lens
 		dot(p,normalize(vec3(0.,1.,-2.))) // with slanted cutoff
 	), MAT_OHP));
-	p.z+=.7;
-	p.yz*=rot2(-.8);
+	p.z+=.8;
+	p.yz*=rot2(-.9);
 	r=m(r,vec2(length(max(abs(p)-vec3(.6,.8,.07),0.)), MAT_OHP));
 	return r;
+}
+
+float beam(vec3 p)
+{
+	p.y-=35.;
+	p.z+=28.; // 26+2 because map() does +2
+	float t = dot(p+vec3(0.,0.,2.3),-vec3(0.,.43,1.)); // top
+	t=max(t,dot(p+vec3(8.1,0.,0.),-vec3(1.,.22,0.))); // right
+	t=max(t,dot(p-vec3(8.1,0.,0.),vec3(1.,-.22,0.))); // left
+	t=max(t,dot(p-vec3(0.,0.,13.7),vec3(0.,0.,1.))); // bottom
+	return max(t,dot(p+vec3(0.,35.,-13.2),vec3(0.,-.1,-0.08))); // back
 }
 
 vec2 map(vec3 p)
@@ -95,6 +114,7 @@ vec2 map(vec3 p)
 	r = m(r, wall(p));
 	//r = m(r, stage(p));
 	r = m(r, ohp(p));
+	//r=m(r,vec2(beam(p),MAT_PODIUM));
 	return m(r, vec2(dot(p,vec3(0.,0.,-1.)), MAT_GROUND));
 }
 
@@ -104,15 +124,22 @@ vec3 norm(vec3 p, float dist_to_p)
 	return normalize(e.xyy*map(p+e.xyy).x+e.yyx*map(p+e.yyx).x+e.yxy*map(p+e.yxy).x+e.xxx*map(p+e.xxx).x);
 }
 
+int cone=0,dc=1;
 // x=hit(flopineShade) y=dist_to_p z=dist_to_ro w=material(if hit)
 vec4 march(vec3 ro, vec3 rd)
 {
 	vec4 r = vec4(0);
-	for (i = 0; i < 200 && r.z < 350.; i++){
+	for (i = 0; i < 500 && r.z < 350.; i++){
 		gHitPosition = ro + rd * r.z;
 		vec2 m = map(gHitPosition);
+		if (dc>0) {
+			float b = beam(gHitPosition);
+			if (b<.0001) {
+				dc=0;cone=1;
+			} else if (b<m.x) m=vec2(b,MAT_PODIUM);
+		}
 		float dist = m.x;
-		if (dist < .0001) {
+		if (dist < .0001 && m.y!=MAT_PODIUM) {
 			r.x = float(i)/float(200); // TODO: this can just be 1. if not using flopine shade
 			r.y = dist;
 			r.w = m.y;
@@ -196,8 +223,8 @@ vec4 getmat(vec4 r)
 
 float mb(vec2 mb)
 {
+    mb.x=1.-mb.x;
     if (mb.x<0.||mb.y<0.||mb.x>1.||mb.y>1.)return 0.;
-    //float a=.2,b=.8;
     float a=mod(mb.x,.04)<.02?0.:1.,b=1.;
     if (mod(mb.y,.04)<.02)a=1.-a;
     if (mb.x > .5) {
@@ -229,13 +256,42 @@ vec3 colorHit(vec4 result, vec3 rd, vec3 normal, vec3 mat)
 	//return 1.-vec3(result.x);
 	if (result.w == MAT_OHP_LITE) {
 		// it's 4x4
-		vec3 lit=.8*vec3(250.,255.,211.)/255.;
 		vec2 h=gHitPosition.xy;
+		vec3 lit=.8*vec3(250.,255.,211.)/255.;
 		h.y+=.8;
 		if (abs(h.x)<2.&&abs(h.y)<1.) {
 			lit*=clamp(mb((h+vec2(1.8,.8))/vec2(3.6,1.6)),.02,1.);
 		}
+		h.xy*=rot2(.5);
+		h.y-=2.8;
+		h*=h;
+		if (h.x/2.8+h.y<.3) {
+			return vec3(255.,171.,45.)/255.; // nose
+		} else if (h.x/2.8+h.y<.35) {
+			return vec3(242.,158.,2.)/255.; // nose outline
+		}
 		return lit;
+	}
+	if (result.w == MAT_WALL) {
+		vec2 h=gHitPosition.xz;
+		h.y+=32.;
+		if (abs(h.x)<18.&&abs(h.y)<18.) {
+			h/=8.5;
+			vec3 lit=.8*vec3(250.,255.,211.)/255.;
+			h.y+=.8;
+			if (abs(h.x)<2.&&abs(h.y)<1.) {
+				lit*=clamp(mb((h+vec2(1.8,.8))/vec2(3.6,1.6)),.02,1.);
+			}
+			h.xy*=rot2(.5);
+			h.y-=2.8;
+			h*=h;
+			if (h.x/2.8+h.y<.3) {
+				return vec3(255.,171.,45.)/255.; // nose
+			} else if (h.x/2.8+h.y<.35) {
+				return vec3(242.,158.,2.)/255.; // nose outline
+			}
+			return lit;
+		}
 	}
 
 	// https://www.shadertoy.com/view/lsKcDD
@@ -243,7 +299,7 @@ vec3 colorHit(vec4 result, vec3 rd, vec3 normal, vec3 mat)
 	vec3 lig = normalize(vec3(-.2,-.6,-.15));
 
 	// TODO HERE
-	//return mat * 2. * clamp(dot(normal, lig), .0, 1.);
+	return mat * 2. * clamp(dot(normal, lig), .0, 1.);
 
 	vec3 hal = normalize(lig-rd);
 	float dif = clamp(dot(normal, lig), .0, 1.) * clamp(softshadow(gHitPosition, lig),.5,1.);
@@ -331,6 +387,7 @@ void main()
 				if (mat.w > .0001) {
 					vec3 gg = gHitPosition;
 					rd = reflect(rd, normal);
+					dc=0;
 					gHitPosition += .001 * rd;
 					vec4 nr = march(gHitPosition, rd);
 					if (result.x > 0.) {
@@ -342,6 +399,7 @@ void main()
 					gHitPosition = gg;
 				}
 				col = colorHit(result, rd, normal, mat.xyz);
+				if (cone>0) col+=.3;
 			}
 			resultcol += col;
 #if doAA == 1
