@@ -6,20 +6,16 @@
 layout (location=0) uniform vec4 fpar[2];
 layout (location=2) uniform vec4 debug[2]; //noexport
 layout (location=4) uniform sampler2D tex;
-#define MAT_KEY_BLACK 0
-#define MAT_KEY_WHITE 1
-#define MAT_BLACK_NOISE 2
-#define MAT_BLACK_NOISE_LOGO 3
 #define MAT_GROUND 4
 #define MAT_SCREEN_OUTER 5
 #define MAT_WALL 6
 #define MAT_PODIUM 7
 #define MAT_OHP 8
 #define MAT_OHP_LITE 9
+#define MAT_BLU 10
 int i;
 vec3 gHitPosition = vec3(0);
 
-float rand(vec2 p){return fract(sin(dot(p.xy,vec2(12.9898,78.233)))*43758.5453);}
 mat2 rot2(float a){float s=sin(a),c=cos(a);return mat2(c,s,-s,c);}
 
 // better box that works for subtraction //noexport
@@ -85,6 +81,7 @@ vec2 ohp(vec3 p)
 	q.zy *= rot2(-.3);
 	r=m(r,vec2(length(max(abs(q)-vec3(.2,.2,1.7),0.)), MAT_OHP)); // connect thing
 	p.z += 7.;
+	r=m(r,vec2(max(dot(p-vec3(0.,0.,.3),vec3(0.,0.,-1.)),length(p)-.6),MAT_BLU)); // sphere
 	r=m(r,vec2(max(
 		length(max(abs(p)-vec3(.7,1.,.3),0.)), // lens
 		dot(p,normalize(vec3(0.,1.,-2.))) // with slanted cutoff
@@ -104,10 +101,6 @@ float beam(vec3 p)
 	t=max(t,dot(p-vec3(8.1,0.,0.),vec3(1.,-.22,0.))); // left
 	t=max(t,dot(p-vec3(0.,0.,13.7),vec3(0.,0.,1.))); // bottom
 	return max(t,dot(p+vec3(0.,35.,-13.2),vec3(0.,-.1,-0.08))); // back
-}
-float b2(vec3 p)
-{
-	return length(max(abs(p.xy)-vec2(2.2),0.));
 }
 
 vec2 map(vec3 p)
@@ -139,13 +132,13 @@ vec4 march(vec3 ro, vec3 rd)
 		if (dc>0) {
 			b = beam(gHitPosition);
 			if (b<.0001) {
-				dc=0;cone=.3;
+				dc=0;cone=.2;
 			} else if (b<m.x) m=vec2(b,MAT_PODIUM);
 		}
 		if (d2>0) {
-			b = b2(gHitPosition);
+			b = length(max(abs(gHitPosition.xy)-vec2(2.2),0.));
 			if (b<.0001) {
-				d2=0;c2=clamp(.3+(gHitPosition.z+10.)/20.,0.,.3);
+				d2=0;c2=clamp(.3+(gHitPosition.z+10.)/20.,0.,.2);
 			} else if (b<m.x) m=vec2(b,MAT_PODIUM);
 		}
 		dist = m.x;
@@ -193,42 +186,37 @@ float softshadow(vec3 ro, vec3 rd)
 	return res;
 }
 
-// w component is amount of reflection mix //noexport
-vec4 getmat(vec4 r)
+vec3 getmat(vec4 r)
 {
 	vec3 p = gHitPosition.xyz;
 	switch (int(r.w)) {
-	case MAT_KEY_BLACK: return vec4(.007,.007,.007,.4);
-	case MAT_KEY_WHITE: return vec4(vec3(218.,216.,227.)/255., .6);
-	case MAT_BLACK_NOISE:
-	case MAT_BLACK_NOISE_LOGO: return vec4(vec3(.05+.05*rand(mod(vec2(r.z,r.y),10))), 0.);
-	case MAT_GROUND:
-		if (p.y>50.)
-			return vec4(.01);
-		return vec4(.53,.23,.09,.4);
-	case MAT_SCREEN_OUTER: return vec4(vec3(.1),.0);
-	//case MAT_WALL: return vec4(222.,188.,153.,.0)/255.;
+	case MAT_SCREEN_OUTER: return vec3(.1);
+	//case MAT_WALL: return vec3(222.,188.,153.)/255.;
 	case MAT_WALL:
 		if (p.y>70.) {
 			if (abs(p.x)<35. && abs(p.z+32.)<20.) {
-				return vec4(vec3(.5),0.);
+				return vec3(.5);
 			}
-			return vec4(vec3(.02),0.);
+			return vec3(.02);
 		}
 		//if (p.z<-60. && mod(p.x+.5,10.)<1.)
-			//return vec4(146.,100.,64.,.0)/255.;
+			//return vec3(146.,100.,64.)/255.;
 		if (mod(p.z,10.)>1.)
-			return vec4(233.,203.,169.,.0)/255.;
-		return vec4(224.,154.,69.,0.)/255.;
+			return vec3(233.,203.,169.)/255.;
+		return vec3(224.,154.,69.)/255.;
 	case MAT_PODIUM:
-		return vec4(1.,.07,.07,.0);
+		return vec3(1.,.07,.07);
 	case MAT_OHP:
-		//return vec4(255.,220.,175.,0.)/255.;
-		return vec4(.2,.2,.2,.0);
+		//return vec3(255.,220.,175.)/255.;
+		return vec3(.2);
 	case MAT_OHP_LITE:
-		return vec4(vec3(1.),.0);
+		return vec3(1.);
+	case MAT_BLU:
+		return vec3(.2,.2,.8);
 	}
-	return vec4(0., 1., 0., 3.);
+	if (p.y>50.)
+		return vec3(.01);
+	return vec3(.53,.23,.09);
 }
 
 float mb(vec2 mb)
@@ -260,6 +248,61 @@ float mb(vec2 mb)
     return 0.;
 }
 
+float e(vec2 e,float w,float h){
+	e*=e;
+	return e.x/w+e.y/h;
+}
+float e2(vec2 z,float w,float h,float x,float y){
+	z.x=abs(z.x)+x;z.y+=y;
+	return e(z,w,h);
+}
+vec3 o(vec2 h)
+{
+	vec3 lit=.8*vec3(250.,255.,211.)/255.;
+	h.y+=.8;
+	if (abs(h.x)<2.&&abs(h.y)<1.) {
+		lit*=clamp(mb((h+vec2(1.8,.8))/vec2(3.6,1.6)),.02,1.);
+	}
+	h.xy*=rot2(.4);
+	h.y-=3.2;
+	float z = e2(h,.1,.2,-.2,1.);
+	if (z<1.) {// eyes
+		if (.8<z) {
+			return vec3(0.); // eye trace
+		}
+		if (e2(h,.06,.1,-.08,1.05)<.03) {
+			return vec3(1.); // eye inner white
+		}
+		if (e2(h,.12,.4,-.12,1.)<.1) {
+			return vec3(0.); // eye pupil black
+		}
+		return lit; // white
+	}
+	if (e2(h,2.4,.8,0.,.2)<.35) {
+		// nose
+		if (e2(h,1.,2.,-.4,.2)<.01) {
+			return vec3(0.); // nose hole
+		}
+		return vec3(242.,158.,2.)/300.;
+	}
+	z = e2(h,.4,1.2,-.05,.6);
+	if (z<1.) {
+		if (.9<z) {
+			return vec3(0.); // head trace
+		}
+		return lit;
+	}
+	h.x=abs(h.x)-.12;
+	h.y+=.7;
+	h.xy*=rot2(.6);
+	h.y+=1.;
+	z=e(h,.12,.9);
+	if (.1<z && z<.2) {
+		return vec3(0.); // eye pupil black
+	}
+	return lit;
+}
+
 vec3 colorHit(vec4 result, vec3 rd, vec3 normal, vec3 mat)
 {
 	//return mat;
@@ -267,40 +310,13 @@ vec3 colorHit(vec4 result, vec3 rd, vec3 normal, vec3 mat)
 	if (result.w == MAT_OHP_LITE) {
 		// it's 4x4
 		vec2 h=gHitPosition.xy;
-		vec3 lit=.8*vec3(250.,255.,211.)/255.;
-		h.y+=.8;
-		if (abs(h.x)<2.&&abs(h.y)<1.) {
-			lit*=clamp(mb((h+vec2(1.8,.8))/vec2(3.6,1.6)),.02,1.);
-		}
-		h.xy*=rot2(.5);
-		h.y-=2.8;
-		h*=h;
-		if (h.x/2.8+h.y<.3) {
-			return vec3(255.,171.,45.)/255.; // nose
-		} else if (h.x/2.8+h.y<.35) {
-			return vec3(242.,158.,2.)/255.; // nose outline
-		}
-		return lit;
+		return o(h);
 	}
 	if (result.w == MAT_WALL) {
 		vec2 h=gHitPosition.xz;
 		h.y+=32.;
 		if (abs(h.x)<18.&&abs(h.y)<18.) {
-			h/=8.5;
-			vec3 lit=.8*vec3(250.,255.,211.)/255.;
-			h.y+=.8;
-			if (abs(h.x)<2.&&abs(h.y)<1.) {
-				lit*=clamp(mb((h+vec2(1.8,.8))/vec2(3.6,1.6)),.02,1.);
-			}
-			h.xy*=rot2(.5);
-			h.y-=2.8;
-			h*=h;
-			if (h.x/2.8+h.y<.3) {
-				return vec3(255.,171.,45.)/255.; // nose
-			} else if (h.x/2.8+h.y<.35) {
-				return vec3(242.,158.,2.)/255.; // nose outline
-			}
-			return lit;
+			return o(h/8.5);
 		}
 	}
 
@@ -392,23 +408,7 @@ void main()
 
 			if (result.x > 0.) { // hit
 				vec3 normal = norm(gHitPosition, result.y);
-				vec4 mat = getmat(result) * .3;
-				// reflexxions
-				if (mat.w > .0001) {
-					vec3 gg = gHitPosition;
-					rd = reflect(rd, normal);
-					dc=0;
-					gHitPosition += .001 * rd;
-					vec4 nr = march(gHitPosition, rd);
-					if (result.x > 0.) {
-						vec3 nn = norm(gHitPosition, result.y);
-						vec3 m = getmat(nr).xyz;
-						vec3 nc = colorHit(nr, rd, nn, m);
-						mat.xyz = mix(mat.xyz, nc * mat.w, mat.w);
-					}
-					gHitPosition = gg;
-				}
-				col = colorHit(result, rd, normal, mat.xyz)+cone+c2;
+				col = colorHit(result, rd, normal, getmat(result)*.3)+cone+c2;
 			}
 			resultcol += col;
 #if doAA == 1
