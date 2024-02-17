@@ -105,6 +105,10 @@ float beam(vec3 p)
 	t=max(t,dot(p-vec3(0.,0.,13.7),vec3(0.,0.,1.))); // bottom
 	return max(t,dot(p+vec3(0.,35.,-13.2),vec3(0.,-.1,-0.08))); // back
 }
+float b2(vec3 p)
+{
+	return length(max(abs(p.xy)-vec2(2.2),0.));
+}
 
 vec2 map(vec3 p)
 {
@@ -114,7 +118,6 @@ vec2 map(vec3 p)
 	r = m(r, wall(p));
 	//r = m(r, stage(p));
 	r = m(r, ohp(p));
-	//r=m(r,vec2(beam(p),MAT_PODIUM));
 	return m(r, vec2(dot(p,vec3(0.,0.,-1.)), MAT_GROUND));
 }
 
@@ -124,21 +127,28 @@ vec3 norm(vec3 p, float dist_to_p)
 	return normalize(e.xyy*map(p+e.xyy).x+e.yyx*map(p+e.yyx).x+e.yxy*map(p+e.yxy).x+e.xxx*map(p+e.xxx).x);
 }
 
-int cone=0,dc=1;
+int dc=1,d2=1;float cone=0.,c2=0.;
 // x=hit(flopineShade) y=dist_to_p z=dist_to_ro w=material(if hit)
 vec4 march(vec3 ro, vec3 rd)
 {
+	float b,dist;
 	vec4 r = vec4(0);
 	for (i = 0; i < 500 && r.z < 350.; i++){
 		gHitPosition = ro + rd * r.z;
 		vec2 m = map(gHitPosition);
 		if (dc>0) {
-			float b = beam(gHitPosition);
+			b = beam(gHitPosition);
 			if (b<.0001) {
-				dc=0;cone=1;
+				dc=0;cone=.3;
 			} else if (b<m.x) m=vec2(b,MAT_PODIUM);
 		}
-		float dist = m.x;
+		if (d2>0) {
+			b = b2(gHitPosition);
+			if (b<.0001) {
+				d2=0;c2=clamp(.3+(gHitPosition.z+10.)/20.,0.,.3);
+			} else if (b<m.x) m=vec2(b,MAT_PODIUM);
+		}
+		dist = m.x;
 		if (dist < .0001 && m.y!=MAT_PODIUM) {
 			r.x = float(i)/float(200); // TODO: this can just be 1. if not using flopine shade
 			r.y = dist;
@@ -398,8 +408,7 @@ void main()
 					}
 					gHitPosition = gg;
 				}
-				col = colorHit(result, rd, normal, mat.xyz);
-				if (cone>0) col+=.3;
+				col = colorHit(result, rd, normal, mat.xyz)+cone+c2;
 			}
 			resultcol += col;
 #if doAA == 1
