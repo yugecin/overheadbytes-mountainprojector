@@ -1,8 +1,8 @@
 #version 430
-#define debugmov 1
+#define debugmov 0
 #define shadertoy 0 //noexport
-#define doAA 0
-#define partialrender 0
+#define doAA 1
+#define partialrender 1
 layout (location=0) uniform vec4 fpar[2];
 layout (location=2) uniform vec4 debug[2]; //noexport
 layout (location=4) uniform sampler2D tex;
@@ -191,7 +191,6 @@ vec3 getmat(vec4 r)
 	vec3 p = gHitPosition.xyz;
 	switch (int(r.w)) {
 	case MAT_SCREEN_OUTER: return vec3(.1);
-	//case MAT_WALL: return vec3(222.,188.,153.)/255.;
 	case MAT_WALL:
 		if (p.y>70.) {
 			if (abs(p.x)<35. && abs(p.z+32.)<20.) {
@@ -335,7 +334,7 @@ vec3 colorHit(vec4 result, vec3 rd, vec3 normal, vec3 mat)
 	vec3 lig = normalize(vec3(-.2,-.6,-.15));
 
 	// TODO HERE
-	return mat * 2. * clamp(dot(normal, lig), .0, 1.);
+	//return mat * 2. * clamp(dot(normal, lig), .0, 1.);
 
 	vec3 hal = normalize(lig-rd);
 	float dif = clamp(dot(normal, lig), .0, 1.) * clamp(softshadow(gHitPosition, lig),.5,1.);
@@ -376,8 +375,8 @@ void main()
 	}
 #endif
 
-	vec3 ro = vec3(-13., 1., -11.);
-	vec3 at = vec3(-5., -10., 0.);
+	vec3 ro = vec3(-8., -12., -12.);
+	vec3 at = vec3(2., 70., -20.);
 
 #if debugmov //noexport
 	ro = debug[0].xyz/20.; //noexport
