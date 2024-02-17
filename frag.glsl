@@ -285,7 +285,7 @@ vec3 o(vec2 h)
 		}
 		return vec3(242.,158.,2.)/300.;
 	}
-	z = e2(h,.4,1.2,-.05,.6);
+	z = e2(h,.5,1.1,-.05,.6);
 	if (z<1.) {
 		if (.9<z) {
 			return vec3(0.); // head trace
@@ -294,11 +294,21 @@ vec3 o(vec2 h)
 	}
 	h.x=abs(h.x)-.12;
 	h.y+=.7;
-	h.xy*=rot2(.6);
-	h.y+=1.;
-	z=e(h,.12,.9);
-	if (.1<z && z<.2) {
-		return vec3(0.); // eye pupil black
+		// gewei
+		vec2 g=h*rot2(.15);
+		g.y+=.9;
+		if (e(g,.12,1.)<.2) {
+			return vec3(242.,158.,2.)/300.;
+		}
+	h*=rot2(.6);
+	h.y+=.9;
+	z=e(h,.12,1.2);
+	if (.12<z && z<.2) {
+		return vec3(0.); // ears
+	}
+	h.y-=.2;
+	if (e(h,.005,.7)<.2) {
+		return vec3(0.); // ears inner
 	}
 	return lit;
 }
